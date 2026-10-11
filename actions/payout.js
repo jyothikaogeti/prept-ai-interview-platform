@@ -16,7 +16,7 @@ export async function approvePayout({ payoutId, adminPassword }) {
   });
 
   if (!payout) throw new Error("Payout not found");
-  if (payout.status === "PROCESSSED") throw new Error("Already processed");
+  if (payout.status === "PROCESSED") throw new Error("Already processed");
 
   await prisma.payout.update({
     where: {
