@@ -27,7 +27,7 @@ export function AppointmentCard({ booking, mode, isPast = false }) {
     status,
     creditsCharged,
     streamCallId,
-    recordingurl,
+    recordingUrl,
     feedback,
   } = booking;
   const user =
@@ -192,11 +192,11 @@ export function AppointmentCard({ booking, mode, isPast = false }) {
             )}
 
             {isCompleted &&
-              recordingurl &&
+              recordingUrl &&
               (isStarterOrPro ? (
                 <Button size="sm" variant="outline" className="gap-2" asChild>
                   <a
-                    href={recordingurl}
+                    href={recordingUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
