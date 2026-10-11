@@ -1,0 +1,79 @@
+"use server";
+
+import { currentUser } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
+import { StreamClient } from "@stream-io/node-sdk";
+
+export async function getCallData(callId) {
+  const user = await currentUser();
+  if (!user)
+    return {
+      error: "Unauthorized",
+    };
+
+  const booking = await prisma.booking.findUnique({
+    where: {
+      streamCallId: callId,
+    },
+    include: {
+      interviewer: {
+        select: {
+          id: true,
+          clerkUserId: true,
+          name: true,
+          imageUrl: true,
+          categories: true,
+        },
+      },
+      interviewee: {
+        select: {
+          id: true,
+          clerkUserId: true,
+          name: true,
+          imageUrl: true,
+        },
+      },
+    },
+  });
+
+  if (!booking)
+    return {
+      error: "Call not found",
+    };
+
+  const isInterviewer = booking.interviewer.clerkUserId === user.id;
+  const isInterviewee = booking.interviewee.clerkUserId === user.id;
+
+  if (!isInterviewer && !isInterviewee)
+    return {
+      error: "Forbidden",
+    };
+
+  const streamClient = new StreamClient(
+    process.env.NEXT_PUBLIC_STREAM_API_KEY,
+    process.env.STREAM_SECRET_KEY,
+  );
+
+  const token = streamClient.generateUserToken({
+    user_id: user.id,
+    validity_in_seconds: 60 * 60,
+  });
+
+  return {
+    token,
+    isInterviewer,
+    currentUser: {
+      id: user.id,
+      name: isInterviewer ? booking.interviewer.name : booking.interviewee.name,
+      imageUrl: user.imageUrl,
+    },
+    booking: {
+      id: booking.id,
+      interviewer: booking.interviewer,
+      interviewee: booking.interviewee,
+      categories: booking.interviewer.categories,
+      startTime: booking.startTime.toISOString(),
+      endTime: booking.endTime.toISOString(),
+    },
+  };
+}
