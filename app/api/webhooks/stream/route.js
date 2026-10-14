@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { GEMINI_MODEL } from "@/lib/gemini";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request) {
@@ -131,6 +132,13 @@ export async function POST(request) {
       console.log(`[stream-webhook] Downloading transcript from Stream CDN...`);
 
       const transcriptResponse = await fetch(transcriptionUrl);
+
+      if (!transcriptResponse.ok) {
+        throw new Error(
+          `Transcript download failed with status ${transcriptResponse.status}`,
+        );
+      }
+
       const transcriptText = await transcriptResponse.text();
 
       console.log(
@@ -181,7 +189,7 @@ export async function POST(request) {
       );
 
       console.log(
-        `[stream-webhook] Sending transcript to Gemini (gemini-3.5-flash-lite)...`,
+        `[stream-webhook] Sending transcript to Gemini (${GEMINI_MODEL})...`,
       );
 
       const genAI = new GoogleGenAI({
@@ -213,26 +221,35 @@ export async function POST(request) {
       }`;
 
       const response = await genAI.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: GEMINI_MODEL,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
         },
       });
 
+      const raw = (response.text ?? "")
+        .trim()
+        .replace(/^```json\s*|^```\s*|```$/gm, "")
+        .trim();
+
+      if (!raw) {
+        throw new Error("Gemini returned an empty interview feedback response");
+      }
+
       console.log(
-        `[stream-webhook] Gemini Response: ${response.slice(0, 500)} ${response.length > 500 ? "..." : ""}`,
+        `[stream-webhook] Gemini Response: \n${raw.slice(0, 500)} ${raw.length > 500 ? "..." : ""}`,
       );
 
-      const feedbackData = JSON.parse(response);
+      const feedbackData = JSON.parse(raw);
       console.log(
         `[stream-webhook] Feedback parsed - OverallRating: ${feedbackData.overallRating} | recommendation: ${feedbackData.recommendation}`,
       );
 
       console.log(`[stream-webhook] Writing feedback to DB...`);
 
-      await prisma.$transaction([
-        prisma.feedback.upsert({
+      await prisma.$transaction(async (tx) => {
+        await tx.feedback.upsert({
           where: {
             bookingId: booking.id,
           },
@@ -248,42 +265,39 @@ export async function POST(request) {
             overallRating: feedbackData.overallRating,
           },
           update: {},
-        }),
-        prisma.booking.update({
+        });
+
+        await tx.booking.update({
           where: {
             id: booking.id,
           },
           data: {
             status: "COMPLETED",
           },
-        }),
-      ]);
+        });
 
-      console.log(
-        `[stream-webhook] Feedback upserted + booking marked COMPLETED`,
-      );
-
-      const earnExists = await prisma.creditTransaction.findFirst({
-        where: {
-          bookingId: booking.id,
-          type: "BOOKING_EARNING",
-        },
-      });
-
-      if (!earnExists) {
-        await prisma.creditTransaction.create({
-          data: {
-            userId: booking.interviewer.id,
+        const earnExists = await tx.creditTransaction.findFirst({
+          where: {
             bookingId: booking.id,
-            amount: booking.creditsCharged,
             type: "BOOKING_EARNING",
           },
         });
 
-        console.log(
-          `[stream-webhook] Credit earning transaction created (+${booking.creditsCharged}) credits for interviewer`,
-        );
-      }
+        if (!earnExists) {
+          await tx.creditTransaction.create({
+            data: {
+              userId: booking.interviewer.id,
+              bookingId: booking.id,
+              amount: booking.creditsCharged,
+              type: "BOOKING_EARNING",
+            },
+          });
+        }
+      });
+
+      console.log(
+        `[stream-webhook] Feedback upserted + booking marked COMPLETED`,
+      );
 
       console.log(`[stream-webhook] All done for booking ${booking.id}`);
     }
