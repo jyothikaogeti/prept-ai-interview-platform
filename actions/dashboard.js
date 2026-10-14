@@ -218,6 +218,10 @@ export async function requestWithdrawl({
     ]);
 
     try {
+      if (!ADMIN_EMAIL) {
+        throw new Error("ADMIN_EMAIL is not configured");
+      }
+
       const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL}/payout/${payout.id}`;
 
       const html = await render(
@@ -232,10 +236,6 @@ export async function requestWithdrawl({
           reviewUrl,
         }),
       );
-
-      if (!ADMIN_EMAIL) {
-        throw new Error("ADMIN_EMAIL env variable is not configured");
-      }
 
       await resend.emails.send({
         from: "Prept <onboarding@resend.dev>",
