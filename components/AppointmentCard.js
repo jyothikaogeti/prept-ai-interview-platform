@@ -177,7 +177,7 @@ export function AppointmentCard({ booking, mode, isPast = false }) {
           </div>
         )}
 
-        {(streamCallId || (isCompleted && (recordingurl || feedback))) && (
+        {(streamCallId || (isCompleted && (recordingUrl || feedback))) && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {!isPast && streamCallId && isUpcoming && (
               <Button size="sm" variant="primary" className="gap-2" asChild>
@@ -214,7 +214,7 @@ export function AppointmentCard({ booking, mode, isPast = false }) {
                     )
                   }
                 >
-                  <Lock size={123} />
+                  <Lock size={12} />
                   Recording
                 </Button>
               ))}
