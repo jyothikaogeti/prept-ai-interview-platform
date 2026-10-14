@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit, createRateLimiter } from "@/lib/arcjet";
 import { WithdrawlRequestEmail } from "@/emails/WithdrawlRequestEmail";
 
-const ADMIN_EMAIL = "jyothika.ogeti.devhub@gmail.com";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -219,6 +219,7 @@ export async function requestWithdrawl({
 
     try {
       const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL}/payout/${payout.id}`;
+
       const html = await render(
         WithdrawlRequestEmail({
           interviewerName: dbUser.name ?? "Unknown",
@@ -231,6 +232,10 @@ export async function requestWithdrawl({
           reviewUrl,
         }),
       );
+
+      if (!ADMIN_EMAIL) {
+        throw new Error("ADMIN_EMAIL env variable is not configured");
+      }
 
       await resend.emails.send({
         from: "Prept <onboarding@resend.dev>",

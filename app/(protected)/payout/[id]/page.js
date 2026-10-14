@@ -1,10 +1,19 @@
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
+import { isAdminEmailAddress } from "@/lib/admin";
 import { GoldTitle, GrayTitle, SectionLabel } from "@/components/Reusables";
 import PayoutReview from "./_components/PayoutReview";
 
 export default async function PayoutPage({ params }) {
+  await auth.protect();
+
+  const user = await currentUser();
+  if (!isAdminEmailAddress(user?.primaryEmailAddress?.emailAddress)) {
+    notFound();
+  }
+
   const { id } = await params;
 
   const payout = await prisma.payout.findUnique({
