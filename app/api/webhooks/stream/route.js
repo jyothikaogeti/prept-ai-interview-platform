@@ -1,9 +1,78 @@
 import { GoogleGenAI } from "@google/genai";
+import { gunzipSync } from "node:zlib";
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { GEMINI_MODEL } from "@/lib/gemini";
 import { prisma } from "@/lib/prisma";
 
+export const runtime = "nodejs";
+
+function getUncompressedBody(rawBody) {
+  if (rawBody.length >= 2 && rawBody[0] === 0x1f && rawBody[1] === 0x8b) {
+    return gunzipSync(rawBody);
+  }
+
+  return rawBody;
+}
+
+function verifyStreamSignature(body, signature, secret) {
+  const expectedSignature = createHmac("sha256", secret)
+    .update(body)
+    .digest("hex");
+
+  const expected = Buffer.from(expectedSignature, "utf-8");
+  const actual = Buffer.from(signature, "utf-8");
+
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export async function POST(request) {
-  const body = await request.json();
+  const webhookSecret = process.env.STREAM_SECRET_KEY;
+
+  if (!webhookSecret) {
+    console.error("[stream-webhook] STREAM_SECRET_KEY is not configured");
+
+    return Response.json(
+      { error: "Webhook is not configured" },
+      { status: 500 },
+    );
+  }
+
+  const signature = request.headers.get("x-signature");
+
+  if (!signature) {
+    return Response.json(
+      { error: "Missing webhook signature" },
+      { status: 401 },
+    );
+  }
+
+  let payloadBuffer;
+
+  try {
+    const rawBody = Buffer.from(await request.arrayBuffer());
+    payloadBuffer = getUncompressedBody(rawBody);
+
+    if (!verifyStreamSignature(payloadBuffer, signature, webhookSecret)) {
+      return Response.json(
+        { error: "Invalid webhook signature" },
+        { status: 401 },
+      );
+    }
+  } catch (error) {
+    console.error("[stream-webhook] Failed to read or verify request");
+
+    return Response.json({ error: "Invalid webhook request" }, { status: 400 });
+  }
+
+  let body;
+
+  try {
+    body = JSON.parse(payloadBuffer.toString("utf8"));
+  } catch (error) {
+    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+
   const eventType = body.type;
 
   console.log(`[stream-webhook] Received event: ${eventType}`);
